@@ -1,31 +1,31 @@
-name: Build OnePlus_Kernel
+name: Build OnePlus_ace2
 on:
   workflow_dispatch:
     inputs:
       CPU:
         description: "分支"
         required: true
-        default: 'sm8650'
+        default: 'sm8475'
       FEIL:
         description: "配置文件"
         required: true
-        default: 'oneplus_ace3_pro_v'
+        default: 'oneplus_ace2_v'
       CPUD:
         description: "处理器代号"
         required: true
-        default: 'pineapple'
+        default: 'waipio'
       ANDROID_VERSION:
         description: "内核安卓版本"
         required: true
-        default: 'android14'
+        default: 'android12'
       KERNEL_VERSION:
         description: "内核版本"
         required: true
-        default: '6.1'
+        default: '5.10'
       KERNEL_NAME:
         description: "修改内核名称"
         required: true
-        default: '-android14-11-o-g1132d864665d'
+        default: '-android12-9-o-g0a04ff961c85'
       kernelsu_variant:
         description: "选择 KSU"
         required: true
@@ -222,9 +222,13 @@ jobs:
       - name: Add make name
         run: |
          cd kernel_workspace/kernel_platform
-           sed -i "/stable_scmversion_cmd/s/-maybe-dirty//g" ./build/kernel/kleaf/impl/stamp.bzl
-           sed -i '$s|echo "\$res"|echo "\${{ github.event.inputs.KERNEL_NAME }}"|' ./common/scripts/setlocalversion
-  
+           sed -i '$s|echo "\$res"|echo "${{ github.event.inputs.KERNEL_NAME }}"|' ./common/scripts/setlocalversion
+          if [[ "${{ github.event.inputs.CPU }}" == "sm8650" ]]; then
+            sed -i "/stable_scmversion_cmd/s/-maybe-dirty//g" ./build/kernel/kleaf/impl/stamp.bzl
+          else
+            echo "skip: 旧版内核无需修改 stamp.bzl"
+          fi
+          
       - name: Build kernel
         run: |
           cd kernel_workspace
@@ -240,39 +244,23 @@ jobs:
           git clone https://github.com/Kernel-SU/AnyKernel3 --depth=1
           rm -rf ./AnyKernel3/.git
 
-          # 定义目录路径
-          dir1="./kernel_workspace/kernel_platform/out/msm-kernel-${{ github.event.inputs.CPUD }}-gki/dist/"
-          dir2="./kernel_workspace/kernel_platform/common/out/arch/arm64/boot/"
-          target1="./AnyKernel3/"
-          target2="./kernel_workspace/kernel"
-
-          # 在第一个目录中查找 Image 文件
-          if find "$dir1" -name "Image" | grep -q "Image"; then
-            echo "文件 Image 在dist目录中"
-            cp "$dir1"Image "$target1"
-            cp "$dir1"Image "$target2"
+          # 动态路径生成
+          if [[ "${{ github.event.inputs.CPU }}" == "sm8650" ]]; then
+            IMAGE_PATH="kernel_workspace/kernel_platform/out/msm-kernel-${{ github.event.inputs.CPUD }}-gki/dist/Image"
           else
-            # 在第二个目录中查找 Image 文件
-            if find "$dir2" -name "Image" | grep -q "Image"; then
-              echo "文件 Image 在arch/arm64/boot目录中"
-              cp "$dir2"Image "$target1"
-              cp "$dir2"Image "$target2"
-            else
-              # 在 kernel_workspace/kernel_platform/common/out/ 的所有子目录中查找 Image 文件
-              echo "在 kernel_workspace/kernel_platform/common/out/ 的所有子目录中查找 Image 文件"
-              image_path=$(find "./kernel_workspace/kernel_platform/common/out/" -name "Image" | head -n 1)
-              
-              if [ -n "$image_path" ]; then
-                echo "找到 Image 文件: $image_path"
-                cp "$image_path" "$target1"
-                cp "$image_path" "$target2"
-              else
-                echo "在所有目录中未找到 Image 文件，构建可能失败"
-              fi
-            fi
+            IMAGE_PATH="kernel_workspace/kernel_platform/out/msm-${{ github.event.inputs.CPUD }}-${{ github.event.inputs.CPUD }}-gki/dist/Image"
           fi
-         
-         
+          # 检查文件是否存在
+          if [ -f "$IMAGE_PATH" ]; then
+            cp "$IMAGE_PATH" ./AnyKernel3/
+            cp "$IMAGE_PATH" ./kernel_workspace/kernel
+          else
+            echo "错误：内核镜像文件未生成！可能原因："
+            echo "1. 构建失败，请检查日志。"
+            echo "2. 路径错误：$IMAGE_PATH"
+            exit 1
+          fi
+          
       - name: Upload AnyKernel3
         uses: actions/upload-artifact@v4
         with:
